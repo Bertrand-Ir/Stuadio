@@ -5,7 +5,7 @@ const { once } = require('events');
 const { run, probe, resolveModelsDir, CancelledError } = require('./ffmpeg');
 const { F32Reader, SR, percentile, fromDb } = require('./dsp');
 const { Analyzer, smoothDb, FRAME } = require('./analyze');
-const { recommend, buildChain, LOUDNESS_TARGETS } = require('./chain');
+const { recommend, suggestMode, MODES, buildChain, LOUDNESS_TARGETS } = require('./chain');
 
 const XFADE = Math.round(0.03 * SR); // 30 ms equal-power crossfade at every edit
 
@@ -153,12 +153,14 @@ class Session {
 
     this.source = { file, info, analysis: a };
     const { frameDb, ...publicAnalysis } = a;
+    const presets = Object.fromEntries(MODES.map((m) => [m, recommend(a, info, m)]));
     return {
       file,
       name: path.basename(file),
       info,
       analysis: publicAnalysis,
-      recommended: recommend(a, info),
+      presets,
+      recommended: presets[suggestMode(a)],
       preview: this._p('original.wav'),
     };
   }

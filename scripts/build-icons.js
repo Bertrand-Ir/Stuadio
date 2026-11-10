@@ -13,6 +13,7 @@ const USED = {
   'file-audio': 'file-audio', 'file-video': 'file-video', clock: 'clock', sparkles: 'sparkles',
   shield: 'shield-check', lock: 'lock', loader: 'loader-circle', film: 'film', wave: 'audio-lines',
   headphones: 'headphones', sliders: 'sliders-horizontal',
+  mic: 'mic', phone: 'smartphone', chevron: 'chevron-down',
 };
 
 const dir = path.join(path.dirname(require.resolve('lucide-static/package.json')), 'icons');

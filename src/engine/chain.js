@@ -38,7 +38,7 @@ function characterTilt(character, f) {
  * toward a studio reference. Conservative: partial correction, limited boosts, never boosts
  * bands where the recording has no real signal (e.g. phone-bandwidth audio).
  */
-function toneMatch(spectrum, character = 'natural') {
+function toneMatch(spectrum, character = 'natural', repair = false) {
   if (!spectrum || !spectrum.speechBlocks) return null;
   const n = THIRD_OCTAVES.length;
   const toP = (d) => Math.pow(10, d / 10);
@@ -56,7 +56,8 @@ function toneMatch(spectrum, character = 'natural') {
   let off = 0, cnt = 0;
   THIRD_OCTAVES.forEach((f, i) => { if (f >= 250 && f <= 4000) { off += target[i] - measured[i]; cnt++; } });
   off /= cnt;
-  let gains = THIRD_OCTAVES.map((f, i) => (target[i] - measured[i] - off) * 0.65);
+  // Repair mode (phone/laptop mics) corrects more of the coloration and allows bigger boosts.
+  let gains = THIRD_OCTAVES.map((f, i) => (target[i] - measured[i] - off) * (repair ? 0.85 : 0.65));
   // Smooth across neighbouring bands (broad, musical moves only).
   gains = gains.map((g, i) => {
     const a = gains[Math.max(0, i - 1)], c = gains[Math.min(n - 1, i + 1)];
@@ -64,7 +65,7 @@ function toneMatch(spectrum, character = 'natural') {
   });
   gains = gains.map((g, i) => {
     const f = THIRD_OCTAVES[i];
-    let lo = -6, hi = 4.5;
+    let lo = repair ? -8 : -6, hi = repair ? 6 : 4.5;
     if (f < 160) hi = 1.5;           // never pump up boom
     if (f < 90) { hi = 0; lo = -3; } // HPF handles the extreme lows
     if (!canBoost[i]) hi = 0;
@@ -78,12 +79,26 @@ function firEqualizer(curve) {
   return `firequalizer=gain_entry='${entries.join(';')}':scale=loglog:delay=0.04:zero_phase=on`;
 }
 
-/** Default settings, adapted to what the analysis found. */
-function recommend(analysis, info) {
+/**
+ * One-click modes. Each returns a full settings object tuned to the analysis:
+ *   studio – the full studio treatment (clean, tone, level, master)
+ *   phone  – maximum repair for phone/laptop recordings: noise, room echo, thin tone, uneven level
+ *   clean  – noise removal only; the voice keeps its recorded character
+ */
+const MODES = ['studio', 'phone', 'clean'];
+
+/** The mode we suggest for this recording. */
+function suggestMode(analysis) {
+  return analysis.snrDb < 30 ? 'phone' : 'studio';
+}
+
+/** Settings for a mode, adapted to what the analysis found. */
+function recommend(analysis, info, mode = 'studio') {
   const snr = analysis.snrDb;
   const noisy = snr < 52 || analysis.noiseFloorDb > -70;
   const strength = snr < 24 ? 'strong' : snr < 38 ? 'balanced' : 'gentle';
-  return {
+  const s = {
+    mode: 'studio',
     noise: { on: noisy, strength },
     hum: { on: analysis.hum.detected, freq: analysis.hum.freq },
     rumble: { on: true },
@@ -95,6 +110,20 @@ function recommend(analysis, info) {
     pauses: { on: !info.hasVideo && (analysis.longPauses || 0) > 0, style: 'natural' },
     loudness: { on: true, target: info.hasVideo ? 'youtube' : 'podcast' },
   };
+  if (mode === 'phone') {
+    s.mode = 'phone';
+    // Phones always pick up room tone, so always clean, and never less than balanced.
+    s.noise = { on: true, strength: snr < 38 ? 'strong' : 'balanced' };
+    s.rumble = { on: true, handling: true };          // higher cut: pocket, wind and handling thumps
+    s.echo = { on: true, amount: snr < 30 ? 'strong' : 'medium' };
+    s.tone = { on: true, character: 'natural', repair: true };
+    s.level = { on: true, amount: 'heavy' };           // distance to the phone keeps changing
+  } else if (mode === 'clean') {
+    s.mode = 'clean';
+    s.noise = { on: true, strength };
+    s.echo.on = false; s.tone.on = false; s.deess.on = false; s.level.on = false;
+  }
+  return s;
 }
 
 const lin = (dB) => Math.pow(10, dB / 20);
@@ -122,7 +151,10 @@ function buildChain(settings, analysis) {
   a.push(`volume=${preGainDb.toFixed(2)}dB`);
   const noiseAfterGain = analysis.noiseFloorDb + preGainDb;
 
-  if (settings.rumble.on) { a.push('highpass=f=75:poles=2', 'highpass=f=75:poles=2'); steps.push('rumble'); }
+  if (settings.rumble.on) {
+    const hz = settings.rumble.handling ? 90 : 75;
+    a.push(`highpass=f=${hz}:poles=2`, `highpass=f=${hz}:poles=2`); steps.push('rumble');
+  }
 
   if (settings.hum.on) {
     const f0 = settings.hum.freq === 50 ? 50 : 60;
@@ -146,14 +178,14 @@ function buildChain(settings, analysis) {
 
   const f = b;
   if (settings.echo.on) {
-    const medium = settings.echo.amount === 'medium';
+    const e = { light: { ratio: 1.8, range: -8, rel: 220 }, medium: { ratio: 2.5, range: -14, rel: 160 }, strong: { ratio: 3.2, range: -20, rel: 130 } }[settings.echo.amount] || { ratio: 1.8, range: -8, rel: 220 };
     // Downward expander: pulls room tails and residue down between words without chopping them.
-    f.push(`agate=threshold=${f3(lin(-44))}:ratio=${medium ? 2.5 : 1.8}:range=${f3(lin(medium ? -14 : -8))}:attack=4:release=${medium ? 160 : 220}:knee=4:detection=rms`);
+    f.push(`agate=threshold=${f3(lin(-44))}:ratio=${e.ratio}:range=${f3(lin(e.range))}:attack=4:release=${e.rel}:knee=4:detection=rms`);
     steps.push('echo');
   }
 
   if (settings.tone.on) {
-    const curve = toneMatch(analysis.spectrum, settings.tone.character);
+    const curve = toneMatch(analysis.spectrum, settings.tone.character, !!settings.tone.repair);
     if (curve) { f.push(firEqualizer(curve)); latB += LATENCY.firequalizer; steps.push('tone'); }
   }
 
@@ -178,4 +210,4 @@ function buildChain(settings, analysis) {
   return { stageA: { ...stage(a, latA), neural }, stageB: stage(b, latB), preGainDb, steps };
 }
 
-module.exports = { LOUDNESS_TARGETS, recommend, buildChain, toneMatch };
+module.exports = { LOUDNESS_TARGETS, MODES, recommend, suggestMode, buildChain, toneMatch };

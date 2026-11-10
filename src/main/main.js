@@ -10,7 +10,8 @@ app.setName('Stuadio');
 if (process.platform === 'win32') app.setAppUserModelId('com.stuadio.app');
 nativeTheme.themeSource = ['light', 'dark'].includes(process.env.STUADIO_THEME) ? process.env.STUADIO_THEME : 'system';
 
-if (!app.requestSingleInstanceLock()) { app.quit(); }
+if (process.env.STUADIO_AUTOTEST) app.setPath('userData', path.join(app.getPath('temp'), 'stuadio-autotest-profile'));
+else if (!app.requestSingleInstanceLock()) { app.quit(); }
 // Automated screenshots need software compositing so capturePage sees every layer.
 if (process.env.STUADIO_AUTOTEST) app.disableHardwareAcceleration();
 
@@ -145,10 +146,10 @@ function registerIpc() {
   ipcMain.handle('enhance', async (_e, settings) => {
     try {
       if (!session) throw new Error('Load a file first.');
-      const result = await session.enhance(settings, (p) => send('progress', { task: 'enhance', ...p }));
-      result.previewUrl = mediaUrl('studio', result.preview);
-      delete result.preview;
-      return { ok: true, data: result };
+      // Copy, never mutate: session.result.preview is the file that export reads.
+      const { preview, ...data } = await session.enhance(settings, (p) => send('progress', { task: 'enhance', ...p }));
+      data.previewUrl = mediaUrl('studio', preview);
+      return { ok: true, data };
     } catch (e) { return friendlyError(e); }
   });
 
@@ -162,7 +163,8 @@ function registerIpc() {
       const srcExt = path.extname(src).slice(1).toLowerCase();
       const ext = format === 'video' ? (['mov', 'mkv', 'webm', 'm4v'].includes(srcExt) ? srcExt : 'mp4') : format;
       const names = { wav: 'WAV audio', flac: 'FLAC audio', mp3: 'MP3 audio', m4a: 'AAC audio', mp4: 'MP4 video', mov: 'QuickTime video', mkv: 'Matroska video', webm: 'WebM video', m4v: 'MP4 video' };
-      const r = await dialog.showSaveDialog(win, {
+      const auto = process.env.STUADIO_AUTOTEST && !app.isPackaged ? path.join(process.env.STUADIO_AUTOTEST, `export.${ext}`) : null;
+      const r = auto ? { filePath: auto } : await dialog.showSaveDialog(win, {
         title: 'Export studio audio',
         defaultPath: path.join(path.dirname(src), `${base} (Studio).${ext}`),
         filters: [{ name: names[ext] || ext.toUpperCase(), extensions: [ext] }],

@@ -16,7 +16,7 @@
         opts: { field: 'freq', choices: [[50, '50 Hz'], [60, '60 Hz']] } },
       { key: 'rumble', icon: 'rumble', title: 'Rumble filter', desc: 'Cuts low thumps, wind, desk bumps and handling noise.' },
       { key: 'echo', icon: 'echo', title: 'Echo reduction', desc: 'Tightens the room so your voice sounds close and dry.',
-        opts: { field: 'amount', choices: [['light', 'Light'], ['medium', 'Medium']] } },
+        opts: { field: 'amount', choices: [['light', 'Light'], ['medium', 'Medium'], ['strong', 'Strong']] } },
       { key: 'declip', icon: 'declip', title: 'Clipping repair', desc: 'Rebuilds peaks that distorted while recording.' },
     ] },
     { group: 'Shape', items: [
@@ -97,16 +97,99 @@
     return '';
   }
 
+  /* One-click modes. Each is a full preset computed by the engine from the analysis. */
+  const MODES = [
+    { id: 'studio', icon: 'mic', title: 'Studio sound', desc: 'Clean, rich and balanced voice, mastered for release.' },
+    { id: 'phone', icon: 'phone', title: 'Phone recording', desc: 'Strongest repair for phone and laptop mics: noise, echo, thin sound.' },
+    { id: 'clean', icon: 'noise', title: 'Noise removal only', desc: 'Removes noise and hum. Your voice stays as recorded.' },
+  ];
+  const FINE = CHAIN.filter((g) => g.group === 'Clean' || g.group === 'Shape');
+  const FINE_KEYS = FINE.flatMap((g) => g.items.map((i) => i.key));
+  const MAIN_ITEMS = CHAIN.filter((g) => g.group === 'Edit' || g.group === 'Master').flatMap((g) => g.items);
+  let fineOpen = false;
+
+  function isCustomised() {
+    const p = S.file && S.file.presets[S.settings.mode];
+    return !!p && FINE_KEYS.some((k) => JSON.stringify(p[k]) !== JSON.stringify(S.settings[k]));
+  }
+
+  function selectMode(id) {
+    if (S.state === 'processing') return;
+    const keep = { pauses: S.settings.pauses, loudness: S.settings.loudness };
+    S.settings = { ...structuredClone(S.file.presets[id]), ...keep };
+    renderChain();
+    onSettingsChanged();
+  }
+
   function renderChain() {
     const root = $('#chain');
     root.innerHTML = '';
-    for (const g of CHAIN) {
+    const suggested = S.recommended && S.recommended.mode;
+
+    const modes = document.createElement('div');
+    modes.className = 'modes';
+    modes.setAttribute('role', 'radiogroup');
+    modes.setAttribute('aria-label', 'Enhancement mode');
+    for (const m of MODES) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      const active = S.settings.mode === m.id;
+      b.className = 'mode' + (active ? ' is-active' : '');
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(active));
+      b.innerHTML = `
+        <div class="mode-icon">${Icons.svg(m.icon)}</div>
+        <div class="mode-text">
+          <div class="mode-title">${m.title}${m.id === suggested ? '<span class="tag tag-accent">Recommended</span>' : ''}</div>
+          <div class="mode-desc">${m.desc}</div>
+        </div>
+        <div class="mode-radio">${Icons.svg('check')}</div>`;
+      b.addEventListener('click', () => selectMode(m.id));
+      modes.appendChild(b);
+    }
+    root.appendChild(modes);
+
+    const opts = document.createElement('div');
+    opts.className = 'group';
+    opts.innerHTML = '<div class="group-title">Options</div>';
+    for (const it of MAIN_ITEMS) opts.appendChild(renderRow(it));
+    root.appendChild(opts);
+
+    const fine = document.createElement('div');
+    fine.className = 'fine' + (fineOpen ? ' open' : '');
+    const custom = isCustomised();
+    fine.innerHTML = `
+      <button type="button" class="fine-head" aria-expanded="${fineOpen}">
+        <span class="fine-title">Fine-tune</span>
+        ${custom ? '<span class="tag">Customised</span>' : `<span class="fine-count">${FINE_KEYS.filter((k) => S.settings[k].on).length} of ${FINE_KEYS.length} fixes on</span>`}
+        <span class="fine-chev">${Icons.svg('chevron')}</span>
+      </button>
+      <div class="fine-body"></div>`;
+    const fb = fine.querySelector('.fine-body');
+    for (const g of FINE) {
       const grp = document.createElement('div');
       grp.className = 'group';
       grp.innerHTML = `<div class="group-title">${g.group}</div>`;
       for (const it of g.items) grp.appendChild(renderRow(it));
-      root.appendChild(grp);
+      fb.appendChild(grp);
     }
+    fine.querySelector('.fine-head').addEventListener('click', () => {
+      fineOpen = !fineOpen;
+      fine.classList.toggle('open', fineOpen);
+      fine.querySelector('.fine-head').setAttribute('aria-expanded', String(fineOpen));
+    });
+    root.appendChild(fine);
+  }
+
+  function refreshFineHead() {
+    const head = document.querySelector('.fine-head');
+    if (!head) return;
+    const custom = isCustomised();
+    const old = head.querySelector('.tag, .fine-count');
+    const el = document.createElement('span');
+    if (custom) { el.className = 'tag'; el.textContent = 'Customised'; }
+    else { el.className = 'fine-count'; el.textContent = `${FINE_KEYS.filter((k) => S.settings[k].on).length} of ${FINE_KEYS.length} fixes on`; }
+    old.replaceWith(el);
   }
 
   function renderRow(it) {
@@ -157,7 +240,7 @@
     return '';
   }
 
-  function onSettingsChanged() { updateDirty(); }
+  function onSettingsChanged() { refreshFineHead(); updateDirty(); }
   function updateDirty() {
     const dirty = S.state === 'done' && S.settings && JSON.stringify(S.settings) !== S.snapshot;
     body.classList.toggle('dirty', !!dirty);

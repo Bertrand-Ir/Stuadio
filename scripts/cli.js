@@ -21,14 +21,17 @@ const { Session } = require('../src/engine/session');
   console.log('INFO', JSON.stringify(info));
   console.log('ANALYSIS', JSON.stringify({ ...analysis, waveform: undefined, spectrum: undefined }));
   console.log('RECOMMENDED', JSON.stringify(recommended));
-  const settings = JSON.parse(JSON.stringify(recommended));
+  const modeArg = args.find((a) => a.startsWith('--mode='));
+  const settings = JSON.parse(JSON.stringify(modeArg ? loaded.presets[modeArg.slice(7)] : recommended));
+  if (!settings) { console.error('unknown mode (studio | phone | clean)'); process.exit(1); }
+  const fixes = Object.keys(settings).filter((k) => typeof settings[k] === 'object');
   for (const a of args) {
     if (a === '--no-pauses') settings.pauses.on = false;
     if (a === '--pauses') settings.pauses.on = true;
     if (a.startsWith('--target=')) settings.loudness.target = a.slice(9);
     if (a.startsWith('--noise=')) { settings.noise.on = true; settings.noise.strength = a.slice(8); }
-    if (a === '--off') for (const k of Object.keys(settings)) settings[k].on = false;
-    if (a.startsWith('--only=')) { for (const k of Object.keys(settings)) settings[k].on = false; for (const k of a.slice(7).split(',')) settings[k].on = true; }
+    if (a === '--off') for (const k of fixes) settings[k].on = false;
+    if (a.startsWith('--only=')) { for (const k of fixes) settings[k].on = false; for (const k of a.slice(7).split(',')) settings[k].on = true; }
   }
   const t1 = Date.now();
   let last = '';

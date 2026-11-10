@@ -24,12 +24,26 @@ module.exports = async function autotest(win, outDir, file) {
     js(`window.__stuadio.openPath(${JSON.stringify(file)})`);
     await wait(250); await shot('02-loading');
     await until(`document.body.dataset.state === 'ready'`); await wait(900); await shot('03-ready');
+    await js(`document.querySelector('.mode:nth-child(2)').click()`); await wait(300); await shot('03b-phone-mode');
     js('window.__stuadio.enhance()');
     await until(`document.body.dataset.state === 'processing' && parseInt(document.querySelector('#busyPct').textContent) >= 45`); await shot('04-processing');
     await until(`document.body.dataset.state === 'done'`); await wait(1400); await shot('05-done');
     await js(`window.__stuadio.setView('original')`); await wait(800); await shot('06-original-trims');
-    await js(`document.querySelector('.row[data-key="tone"] .seg-btn[data-value="warm"]').click()`); await wait(400); await shot('07-dirty');
+    await js(`document.querySelector('.fine-head').click()`); await wait(200);
+    await js(`document.querySelector('.row[data-key="tone"] .seg-btn[data-value="warm"]').click()`); await js(`document.querySelector('.fine').scrollIntoView()`); await wait(400); await shot('07-dirty');
     await js('window.__stuadio.openExport()'); await wait(600); await shot('08-export');
+    // Real export through IPC (save dialog is bypassed in autotest mode).
+    for (const f of ['wav', 'mp3']) {
+      const dest = path.join(outDir, 'export.' + f);
+      fs.rmSync(dest, { force: true });
+      await js(`document.querySelector('.fmt[data-id="${f}"]').click(); document.querySelector('#btnSave').click()`);
+      await until(`document.querySelector('#exportSheet').hidden || [...document.querySelectorAll('.toast.bad')].length > 0`, 60000);
+      const bad = await js(`[...document.querySelectorAll('.toast.bad')].map((t) => t.textContent).join(' | ')`);
+      if (bad || !fs.existsSync(dest) || fs.statSync(dest).size < 1000) throw new Error(`Export ${f} failed: ${bad || 'no file'}`);
+      fs.appendFileSync(path.join(outDir, 'exports.txt'), `${f} ${fs.statSync(dest).size} bytes\n`);
+      await wait(300); await js('window.__stuadio.openExport()'); await wait(400);
+    }
+    await shot('08b-exported');
     await js(`document.querySelector('#btnSheetCancel').click()`); await wait(300);
     wc.send('update', { type: 'available', version: '1.1.0', current: '1.0.0', notes: ['What is new', '- Faster noise removal on long recordings', '- New Warm tone character', '- Fixed export of MKV files'].join('\n') });
     await wait(900); await shot('09-update');

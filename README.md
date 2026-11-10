@@ -4,7 +4,13 @@
 
 ## What it does
 
-Stuadio analyses each file first and switches on only the fixes it needs. You can turn any fix off or adjust it before processing.
+Stuadio analyses each file first, then you pick one of three modes. The best one for the recording is preselected.
+
+- **Studio sound**: the full treatment, with clean, rich, balanced and mastered sound.
+- **Phone recording**: the strongest repair for phone and laptop mics. It uses heavier noise removal, stronger echo reduction, a deeper tone correction, a higher low cut for handling noise, and heavier leveling.
+- **Noise removal only**: removes noise and hum and keeps the voice as recorded.
+
+Trim pauses and the loudness target are separate options. Each fix below can still be adjusted under **Fine-tune**.
 
 | Stage  | Fix                | How                                                                 |
 | ------ | ------------------ | ------------------------------------------------------------------- |

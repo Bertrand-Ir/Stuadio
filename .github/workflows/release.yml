@@ -2,8 +2,8 @@
 # Installed copies of Stuadio pick the new release up automatically (in-app update prompt).
 #
 # To ship a new version:
-#   1. bump "version" in package.json (e.g. 1.0.1) and commit
-#   2. git tag v1.0.1 && git push origin main --tags
+#   1. npm version patch   (bumps package.json and creates the tag)
+#   2. git push origin main --tags
 name: Release
 
 on:
@@ -35,7 +35,21 @@ jobs:
       - name: Engine self-test
         run: npm test
 
-      - name: Build and publish
-        run: npx electron-builder --win nsis --publish always
+      # Build only. Publishing is a separate single step so all files land in ONE release
+      # (electron-builder's parallel uploads can otherwise create duplicate releases).
+      - name: Build installer
+        run: npx electron-builder --win nsis --publish never
+
+      # One release per tag containing exactly the three files the auto-updater needs:
+      # the installer, its .blockmap (enables small differential updates) and latest.yml.
+      - name: Publish GitHub release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          files="dist/Stuadio-Setup-${GITHUB_REF_NAME#v}.exe dist/Stuadio-Setup-${GITHUB_REF_NAME#v}.exe.blockmap dist/latest.yml"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" $files --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" $files --title "Stuadio ${GITHUB_REF_NAME#v}" --generate-notes
+          fi

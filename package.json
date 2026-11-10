@@ -10,8 +10,7 @@
     "icons": "node scripts/make-icons.js",
     "icons:ui": "node scripts/build-icons.js",
     "dist": "electron-builder --win nsis --publish never",
-    "dist:dir": "electron-builder --dir",
-    "release": "electron-builder --win nsis --publish always"
+    "dist:dir": "electron-builder --dir"
   },
   "author": "Stuadio",
   "license": "UNLICENSED",
@@ -80,7 +79,7 @@
         "provider": "github",
         "owner": "Bertrand-Ir",
         "repo": "Stuadio",
-        "releaseType": "release"
+        "releaseType": "draft"
       }
     ]
   },

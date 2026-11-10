@@ -1,0 +1,41 @@
+# Builds the Windows installer and publishes it as a GitHub Release.
+# Installed copies of Stuadio pick the new release up automatically (in-app update prompt).
+#
+# To ship a new version:
+#   1. bump "version" in package.json (e.g. 1.0.1) and commit
+#   2. git tag v1.0.1 && git push origin main --tags
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check tag matches package.json version
+        shell: bash
+        run: |
+          v=$(node -p "require('./package.json').version")
+          [ "v$v" = "${GITHUB_REF_NAME}" ] || { echo "Tag ${GITHUB_REF_NAME} does not match package.json version $v"; exit 1; }
+
+      - name: Engine self-test
+        run: npm test
+
+      - name: Build and publish
+        run: npx electron-builder --win nsis --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

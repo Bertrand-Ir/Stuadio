@@ -1,6 +1,6 @@
 {
   "name": "stuadio",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Studio sound from any recording.",
   "main": "src/main/main.js",
   "scripts": {
